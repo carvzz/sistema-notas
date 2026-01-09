@@ -5,11 +5,25 @@ from supabase import create_client, Client
 from datetime import date
 
 # --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(
-    page_title="Gestão de Notas",
-    page_icon="tn.png",
-    layout="centered"
-)
+# Tenta usar a logo. Se não achar, usa um emoji padrão.
+try:
+    st.set_page_config(
+        page_title="Controle de Notas Fiscais",
+        page_icon="logo.png", 
+        layout="centered"
+    )
+except:
+    st.set_page_config(page_title="Controle de Notas Fiscais", page_icon="📝", layout="centered")
+
+# --- CABEÇALHO COM LOGO ---
+col_logo, col_titulo = st.columns([1, 4])
+with col_logo:
+    try:
+        st.image("logo.png", width=100)
+    except:
+        st.caption("") # Fica vazio se não tiver logo
+with col_titulo:
+    st.title("Controle de Notas Fiscais")
 
 # --- 2. CONEXÃO SEGURA (SUPABASE) ---
 try:
@@ -17,24 +31,26 @@ try:
     KEY_SUPABASE = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 except Exception as e:
-    st.error("⚠️ Erro de Conexão com os Secrets.")
+    st.error("⚠️ Erro de Conexão. Verifique os Secrets no Streamlit Cloud.")
     st.stop()
 
-# --- 3. FUNÇÃO QUE DESENHA CADA ABA ---
+# --- 3. FUNÇÃO MESTRA (DESENHA AS ABAS) ---
 def desenhar_aba_codigo(codigo_atual):
     
-    # === LISTAS DE BANCOS POR CÓDIGO ===
+    # === LISTAS DE BANCOS ATUALIZADA ===
     listas_de_bancos = {
-        "TN": ["Banco do Brasil", "Caixa", "Santander"],
-        "TL": ["Bradesco", "Itaú", "Inter"],
-        "JF": ["Nubank", "C6 Bank", "Original", "Banco do Nordeste"]
+        "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],
+        "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy"],
+        "JF": ["Daycoval", "Santander"]
     }
+    
+    # Pega a lista certa ou usa "Outros" se der erro
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
 
-    st.markdown(f"### Gestão do Código: **{codigo_atual}**")
+    st.markdown(f"### Gestão: **{codigo_atual}**")
     
     # -------------------------------------------
-    # ÁREA 1: FORMULÁRIO DE CADASTRO
+    # ÁREA 1: FORMULÁRIO
     # -------------------------------------------
     with st.expander(f"➕ Nova Nota ({codigo_atual})", expanded=True):
         with st.form(f"form_{codigo_atual}", clear_on_submit=False):
@@ -61,9 +77,9 @@ def desenhar_aba_codigo(codigo_atual):
             with col4:
                 nova_nf = st.text_input("Nova NF (se cancelada)", key=f"nn_{codigo_atual}")
 
-            if st.form_submit_button("💾 Salvar Lançamento"):
+            if st.form_submit_button("💾 Salvar"):
                 if not num_nf:
-                    st.warning("⚠️ Preencha o número da Nota Fiscal.")
+                    st.warning("⚠️ Preencha o número da Nota.")
                 else:
                     dados = {
                         "codigo": codigo_atual,
@@ -76,40 +92,35 @@ def desenhar_aba_codigo(codigo_atual):
                     }
                     try:
                         supabase.table("notas_fiscais").insert(dados).execute()
-                        st.success(f"✅ Nota salva em {codigo_atual}!")
-                        time.sleep(1)
-                        st.rerun()
+                        st.success(f"✅ Salvo!")
+                        time.sleep(1) # Aguarda 1s para garantir
+                        st.rerun()    # Atualiza a tela
                     except Exception as e:
-                        st.error(f"❌ Erro ao gravar: {e}")
+                        st.error(f"❌ Erro: {e}")
 
     # -------------------------------------------
-    # ÁREA 2: EXCLUSÃO DE NOTAS (CORRIGIDO)
+    # ÁREA 2: EXCLUSÃO
     # -------------------------------------------
     with st.expander("🗑️ Excluir Nota Errada"):
-        # CORREÇÃO AQUI: Usamos select("*") para evitar erro de espaço nos nomes
         try:
+            # Busca todas as colunas (*) para evitar erros
             res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
             
             if res_delete.data:
-                # Cria um dicionário { "Texto que aparece": ID_REAL }
                 opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
                 
-                nota_selecionada = st.selectbox("Selecione a nota para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
+                nota_selecionada = st.selectbox("Selecione para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
                 
-                # Botão de apagar (vermelho)
-                if st.button(f"Apagar Nota Selecionada ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
+                if st.button(f"Apagar Nota ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
                     id_para_apagar = opcoes_exclusao[nota_selecionada]
-                    
-                    # Comando para deletar no Supabase
                     supabase.table("notas_fiscais").delete().eq("id", id_para_apagar).execute()
-                    st.toast("🗑️ Nota apagada com sucesso!")
+                    st.toast("🗑️ Apagado!")
                     time.sleep(1)
                     st.rerun()
             else:
-                st.info("Nenhuma nota recente para apagar.")
-        except Exception as e:
-            # Se der erro aqui, mostramos uma mensagem amigável em vez de quebrar o site
-            st.warning(f"Ainda não há notas para listar na exclusão.")
+                st.caption("Nenhuma nota recente para apagar.")
+        except:
+            st.caption("Lista de exclusão vazia.")
 
     # -------------------------------------------
     # ÁREA 3: HISTÓRICO VISUAL
@@ -119,38 +130,4 @@ def desenhar_aba_codigo(codigo_atual):
     
     try:
         response = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
-        df = pd.DataFrame(response.data)
-
-        if not df.empty:
-            df['data_emissao'] = pd.to_datetime(df['data_emissao'])
-            df['STATUS'] = df['emitida'].apply(lambda x: "🟢 Emitida" if x else "🔴 Pendente")
-            
-            mapa_meses = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
-                          7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
-            df['ano'] = df['data_emissao'].dt.year
-            df['mes_num'] = df['data_emissao'].dt.month
-            df['mes_nome'] = df['mes_num'].map(mapa_meses)
-            
-            grupos = df.groupby(['ano', 'mes_num', 'mes_nome'])
-            
-            for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
-                with st.expander(f"{nome_mes} {ano} — ({len(dados_mes)} notas)"):
-                    cols_show = ['STATUS', 'banco', 'numero_nf', 'data_emissao', 'cancelada', 'nova_nf']
-                    st.dataframe(dados_mes[cols_show], hide_index=True, use_container_width=True)
-        else:
-            st.info(f"Nenhuma nota lançada para o código {codigo_atual} ainda.")
-            
-    except Exception as e:
-        st.error("Erro ao carregar dados.")
-
-# --- 4. CRIAÇÃO DAS ABAS PRINCIPAIS ---
-tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
-
-with tab1:
-    desenhar_aba_codigo("TN")
-with tab2:
-    desenhar_aba_codigo("TL")
-with tab3:
-    desenhar_aba_codigo("JF")
-
-
+        df = pd.DataFrame
