@@ -8,12 +8,19 @@ st.set_page_config(page_title="Gestão de Notas", layout="centered")
 st.title("🗂️ Controle de Notas Fiscais")
 
 # --- 2. CONEXÃO SEGURA (SUPABASE) ---
+# --- 2. CONEXÃO SEGURA (SUPABASE) ---
 try:
-    URL_SUPABASE = st.secrets["https://ylbilxljkqnxgkypydgw.supabase.co"]
-    KEY_SUPABASE = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYmlseGxqa3FueGdreXB5ZGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5MTgyNTAsImV4cCI6MjA4MzQ5NDI1MH0.ZFs69SUWHTLA9E7Y7nNCrF4Z8iI475usayCjqulEKt4"]
-    supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
-except Exception:
-    st.error("⚠️ Configuração pendente: Adicione os Secrets no Streamlit Cloud.")
+    # Tenta pegar as chaves
+    url = st.secrets["https://ylbilxljkqnxgkypydgw.supabase.co"]
+    key = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYmlseGxqa3FueGdreXB5ZGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5MTgyNTAsImV4cCI6MjA4MzQ5NDI1MH0.ZFs69SUWHTLA9E7Y7nNCrF4Z8iI475usayCjqulEKt4"]
+    
+    # Cria a conexão
+    supabase: Client = create_client(url, key)
+except Exception as e:
+    st.error(f"❌ Ocorreu um erro na conexão!")
+    st.warning(f"O erro técnico é: {e}")
+    st.info("Dica: Verifique se no 'Secrets' do Streamlit você escreveu SUPABASE_URL e SUPABASE_KEY (tudo maiúsculo).")
+    st.write("Chaves que o sistema encontrou:", st.secrets.keys()) # Mostra o que ele está vendo
     st.stop()
 
 # --- 3. FUNÇÃO QUE DESENHA CADA ABA ---
@@ -107,3 +114,4 @@ with tab2:
 with tab3:
 
     desenhar_aba_codigo("JF")
+
