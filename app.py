@@ -22,9 +22,9 @@ def desenhar_aba_codigo(codigo_atual):
     
     # === LISTAS DE BANCOS POR CÓDIGO ===
     listas_de_bancos = {
-        "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],          # Bancos só do TN
-        "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy",],                      # Bancos só do TL
-        "JF": ["Daycoval", "Santander"] # Bancos só do JF
+        "TN": ["Banco do Brasil", "Caixa", "Santander"],
+        "TL": ["Bradesco", "Itaú", "Inter"],
+        "JF": ["Nubank", "C6 Bank", "Original", "Banco do Nordeste"]
     }
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
 
