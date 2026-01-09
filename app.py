@@ -10,7 +10,7 @@ st.title("🗂️ Controle de Notas Fiscais")
 # --- 2. CONEXÃO SEGURA (SUPABASE) ---
 try:
     URL_SUPABASE = st.secrets["https://ylbilxljkqnxgkypydgw.supabase.co"]
-    KEY_SUPABASE = st.secrets["ylbilxljkqnxgkypydgw"]
+    KEY_SUPABASE = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYmlseGxqa3FueGdreXB5ZGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc5MTgyNTAsImV4cCI6MjA4MzQ5NDI1MH0.ZFs69SUWHTLA9E7Y7nNCrF4Z8iI475usayCjqulEKt4"]
     supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 except Exception:
     st.error("⚠️ Configuração pendente: Adicione os Secrets no Streamlit Cloud.")
@@ -105,4 +105,5 @@ with tab1:
 with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
+
     desenhar_aba_codigo("JF")
