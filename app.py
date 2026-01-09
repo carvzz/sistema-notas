@@ -20,32 +20,25 @@ except Exception as e:
 # --- 3. FUNÇÃO QUE DESENHA CADA ABA ---
 def desenhar_aba_codigo(codigo_atual):
     
-    # ========================================================
-    # 📍 CONFIGURAÇÃO DOS BANCOS (EDITE AQUI)
-    # ========================================================
-    # Aqui definimos qual lista aparece para cada código
+    # === LISTAS DE BANCOS POR CÓDIGO ===
     listas_de_bancos = {
         "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],          # Bancos só do TN
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy",],                      # Bancos só do TL
         "JF": ["Daycoval", "Santander"] # Bancos só do JF
     }
-    
-    # O sistema pega a lista certa automaticamente aqui:
-    # Se por acaso o código não tiver lista (erro), usa uma genérica
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
-    # ========================================================
 
     st.markdown(f"### Gestão do Código: **{codigo_atual}**")
     
-    # --- FORMULÁRIO DE CADASTRO ---
+    # -------------------------------------------
+    # ÁREA 1: FORMULÁRIO DE CADASTRO
+    # -------------------------------------------
     with st.expander(f"➕ Nova Nota ({codigo_atual})", expanded=True):
         with st.form(f"form_{codigo_atual}", clear_on_submit=False):
             col1, col2 = st.columns(2)
             
             with col1:
-                # AQUI O SISTEMA USA A LISTA ESPECÍFICA QUE CRIAMOS ACIMA
                 banco = st.selectbox("Banco", options=opcoes_bancos, key=f"b_{codigo_atual}")
-                
                 data_em = st.date_input("Data de Emissão", value=date.today(), key=f"d_{codigo_atual}")
                 num_nf = st.text_input("Número da NF", key=f"n_{codigo_atual}")
             
@@ -84,9 +77,39 @@ def desenhar_aba_codigo(codigo_atual):
                         time.sleep(1)
                         st.rerun()
                     except Exception as e:
-                        st.error(f"❌ Erro ao gravar no banco: {e}")
+                        st.error(f"❌ Erro ao gravar: {e}")
 
-    # --- LISTAGEM POR MÊS ---
+    # -------------------------------------------
+    # ÁREA 2: EXCLUSÃO DE NOTAS (NOVO!)
+    # -------------------------------------------
+    with st.expander("🗑️ Excluir Nota Errada"):
+        # Busca as últimas 30 notas deste código para listar no dropdown
+        res_delete = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
+        
+        if res_delete.data:
+            # Cria um dicionário { "Texto que aparece": ID_REAL }
+            # Exemplo: "NF 123 - Bradesco (2024-01-01)" : 54
+            opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
+            
+            nota_selecionada = st.selectbox("Selecione a nota para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
+            
+            # Botão de apagar (vermelho)
+            if st.button(f"Apagar Nota Selecionada ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
+                id_para_apagar = opcoes_exclusao[nota_selecionada]
+                try:
+                    # Comando para deletar no Supabase
+                    supabase.table("notas_fiscais").delete().eq("id", id_para_apagar).execute()
+                    st.toast("🗑️ Nota apagada com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao apagar: {e}")
+        else:
+            st.info("Nenhuma nota recente para apagar.")
+
+    # -------------------------------------------
+    # ÁREA 3: HISTÓRICO VISUAL
+    # -------------------------------------------
     st.write("---")
     st.subheader(f"📂 Histórico: {codigo_atual}")
     
@@ -114,7 +137,7 @@ def desenhar_aba_codigo(codigo_atual):
             st.info(f"Nenhuma nota lançada para o código {codigo_atual} ainda.")
             
     except Exception as e:
-        st.error("Erro ao carregar dados. Verifique sua conexão.")
+        st.error("Erro ao carregar dados.")
 
 # --- 4. CRIAÇÃO DAS ABAS PRINCIPAIS ---
 tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
@@ -125,4 +148,3 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
-
