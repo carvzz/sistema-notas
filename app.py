@@ -21,7 +21,7 @@ with col_logo:
     try:
         st.image("logo.png", width=100)
     except:
-        st.caption("") # Fica vazio se não tiver logo
+        st.caption("") 
 with col_titulo:
     st.title("Controle de Notas Fiscais")
 
@@ -37,14 +37,13 @@ except Exception as e:
 # --- 3. FUNÇÃO MESTRA (DESENHA AS ABAS) ---
 def desenhar_aba_codigo(codigo_atual):
     
-    # === LISTAS DE BANCOS ATUALIZADA ===
+    # === LISTAS DE BANCOS ===
     listas_de_bancos = {
         "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy"],
         "JF": ["Daycoval", "Santander"]
     }
     
-    # Pega a lista certa ou usa "Outros" se der erro
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
 
     st.markdown(f"### Gestão: **{codigo_atual}**")
@@ -93,8 +92,8 @@ def desenhar_aba_codigo(codigo_atual):
                     try:
                         supabase.table("notas_fiscais").insert(dados).execute()
                         st.success(f"✅ Salvo!")
-                        time.sleep(1) # Aguarda 1s para garantir
-                        st.rerun()    # Atualiza a tela
+                        time.sleep(1)
+                        st.rerun()
                     except Exception as e:
                         st.error(f"❌ Erro: {e}")
 
@@ -103,31 +102,4 @@ def desenhar_aba_codigo(codigo_atual):
     # -------------------------------------------
     with st.expander("🗑️ Excluir Nota Errada"):
         try:
-            # Busca todas as colunas (*) para evitar erros
-            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
-            
-            if res_delete.data:
-                opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
-                
-                nota_selecionada = st.selectbox("Selecione para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
-                
-                if st.button(f"Apagar Nota ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
-                    id_para_apagar = opcoes_exclusao[nota_selecionada]
-                    supabase.table("notas_fiscais").delete().eq("id", id_para_apagar).execute()
-                    st.toast("🗑️ Apagado!")
-                    time.sleep(1)
-                    st.rerun()
-            else:
-                st.caption("Nenhuma nota recente para apagar.")
-        except:
-            st.caption("Lista de exclusão vazia.")
-
-    # -------------------------------------------
-    # ÁREA 3: HISTÓRICO VISUAL
-    # -------------------------------------------
-    st.write("---")
-    st.subheader(f"📂 Histórico: {codigo_atual}")
-    
-    try:
-        response = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
-        df = pd.DataFrame
+            res_delete = supabase.table("notas_fiscais").select("*").eq("
