@@ -5,8 +5,11 @@ from supabase import create_client, Client
 from datetime import date
 
 # --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Gestão de Notas", layout="centered")
-st.title("🗂️ Controle de Notas Fiscais")
+st.set_page_config(
+    page_title="Gestão de Notas",
+    page_icon="tn.png",
+    layout="centered"
+)
 
 # --- 2. CONEXÃO SEGURA (SUPABASE) ---
 try:
@@ -149,4 +152,5 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
+
 
