@@ -102,4 +102,63 @@ def desenhar_aba_codigo(codigo_atual):
     # -------------------------------------------
     with st.expander("🗑️ Excluir Nota Errada"):
         try:
-            res_delete = supabase.table("notas_fiscais").select("*").eq("
+            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
+            
+            if res_delete.data:
+                opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
+                
+                nota_selecionada = st.selectbox("Selecione para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
+                
+                if st.button(f"Apagar Nota ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
+                    id_para_apagar = opcoes_exclusao[nota_selecionada]
+                    supabase.table("notas_fiscais").delete().eq("id", id_para_apagar).execute()
+                    st.toast("🗑️ Apagado!")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                st.caption("Nenhuma nota recente para apagar.")
+        except:
+            st.caption("Lista de exclusão vazia.")
+
+    # -------------------------------------------
+    # ÁREA 3: HISTÓRICO VISUAL
+    # -------------------------------------------
+    st.write("---")
+    st.subheader(f"📂 Histórico: {codigo_atual}")
+    
+    # IMPORTANTE: O erro anterior estava aqui. O try precisa fechar com except.
+    try:
+        response = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
+        df = pd.DataFrame(response.data)
+
+        if not df.empty:
+            df['data_emissao'] = pd.to_datetime(df['data_emissao'])
+            df['STATUS'] = df['emitida'].apply(lambda x: "🟢 Emitida" if x else "🔴 Pendente")
+            
+            mapa_meses = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
+                          7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
+            df['ano'] = df['data_emissao'].dt.year
+            df['mes_num'] = df['data_emissao'].dt.month
+            df['mes_nome'] = df['mes_num'].map(mapa_meses)
+            
+            grupos = df.groupby(['ano', 'mes_num', 'mes_nome'])
+            
+            for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
+                with st.expander(f"{nome_mes} {ano} — ({len(dados_mes)} notas)"):
+                    cols_show = ['STATUS', 'banco', 'numero_nf', 'data_emissao', 'cancelada', 'nova_nf']
+                    st.dataframe(dados_mes[cols_show], hide_index=True, use_container_width=True)
+        else:
+            st.info(f"Nenhuma nota em {codigo_atual}.")
+            
+    except Exception as e:
+        st.error("Erro ao carregar dados.")
+
+# --- 4. ABAS PRINCIPAIS ---
+tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
+
+with tab1:
+    desenhar_aba_codigo("TN")
+with tab2:
+    desenhar_aba_codigo("TL")
+with tab3:
+    desenhar_aba_codigo("JF")
