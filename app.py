@@ -80,32 +80,33 @@ def desenhar_aba_codigo(codigo_atual):
                         st.error(f"❌ Erro ao gravar: {e}")
 
     # -------------------------------------------
-    # ÁREA 2: EXCLUSÃO DE NOTAS (NOVO!)
+    # ÁREA 2: EXCLUSÃO DE NOTAS (CORRIGIDO)
     # -------------------------------------------
     with st.expander("🗑️ Excluir Nota Errada"):
-        # Busca as últimas 30 notas deste código para listar no dropdown
-        res_delete = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
-        
-        if res_delete.data:
-            # Cria um dicionário { "Texto que aparece": ID_REAL }
-            # Exemplo: "NF 123 - Bradesco (2024-01-01)" : 54
-            opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
+        # CORREÇÃO AQUI: Usamos select("*") para evitar erro de espaço nos nomes
+        try:
+            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
             
-            nota_selecionada = st.selectbox("Selecione a nota para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
-            
-            # Botão de apagar (vermelho)
-            if st.button(f"Apagar Nota Selecionada ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
-                id_para_apagar = opcoes_exclusao[nota_selecionada]
-                try:
+            if res_delete.data:
+                # Cria um dicionário { "Texto que aparece": ID_REAL }
+                opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
+                
+                nota_selecionada = st.selectbox("Selecione a nota para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
+                
+                # Botão de apagar (vermelho)
+                if st.button(f"Apagar Nota Selecionada ({codigo_atual})", type="primary", key=f"btn_del_{codigo_atual}"):
+                    id_para_apagar = opcoes_exclusao[nota_selecionada]
+                    
                     # Comando para deletar no Supabase
                     supabase.table("notas_fiscais").delete().eq("id", id_para_apagar).execute()
                     st.toast("🗑️ Nota apagada com sucesso!")
                     time.sleep(1)
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao apagar: {e}")
-        else:
-            st.info("Nenhuma nota recente para apagar.")
+            else:
+                st.info("Nenhuma nota recente para apagar.")
+        except Exception as e:
+            # Se der erro aqui, mostramos uma mensagem amigável em vez de quebrar o site
+            st.warning(f"Ainda não há notas para listar na exclusão.")
 
     # -------------------------------------------
     # ÁREA 3: HISTÓRICO VISUAL
@@ -148,3 +149,4 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
+
