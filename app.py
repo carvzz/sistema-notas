@@ -25,7 +25,7 @@ def desenhar_aba_codigo(codigo_atual):
     # ========================================================
     # Aqui definimos qual lista aparece para cada código
     listas_de_bancos = {
-        "TN": ["AgiBank", "Banrisul", "C6 Bank" "Digio", "Itaú" "Caixa", "Santander", "PicPay", "QueroMais"],          # Bancos só do TN
+        "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],          # Bancos só do TN
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy",],                      # Bancos só do TL
         "JF": ["Daycoval", "Santander"] # Bancos só do JF
     }
@@ -125,3 +125,4 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
+
