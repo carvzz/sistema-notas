@@ -39,7 +39,7 @@ def desenhar_aba_codigo(codigo_atual):
     
     # === LISTAS DE BANCOS ===
     listas_de_bancos = {
-        "TN": ["AgiBank", "Banrisul", "C6 Bank", "Digio", "Itaú", "Caixa", "Santander", "PicPay", "QueroMais"],
+        "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Sabemi", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "Teddy"],
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy"],
         "JF": ["Daycoval", "Santander"]
     }
@@ -162,3 +162,4 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
+
