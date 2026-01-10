@@ -5,7 +5,6 @@ from supabase import create_client, Client
 from datetime import date
 
 # --- 1. CONFIGURAÇÃO VISUAL ---
-# Tenta usar a logo. Se não achar, usa um emoji padrão.
 try:
     st.set_page_config(
         page_title="Controle de Notas Fiscais",
@@ -37,14 +36,29 @@ except Exception as e:
 # --- 3. FUNÇÃO MESTRA (DESENHA AS ABAS) ---
 def desenhar_aba_codigo(codigo_atual):
     
-    # === LISTAS DE BANCOS ===
+    # === LISTAS DE BANCOS ATUALIZADA ===
     listas_de_bancos = {
-        "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Sabemi", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "Teddy"],
-        "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "C6 Bank", "CBA", "Happy"],
+        "TN": [
+            "AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", 
+            "Crefaz", "Daycoval", "Digio", "Facta", "Itaú", "Master", "Pan", "Paraná", 
+            "PresençaBank", "Sabemi", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "Teddy"
+        ],
+        "TL": [
+            "Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", 
+            "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Fintech do Corban", "GVN", 
+            "Happy", "iCred", "Inbursa", "Itaú", "Kardbank", "Lecca", "Master", "MeuCashCard", 
+            "Nacional", "Pan", "Santander", "TN", "Tradição"
+        ],
         "JF": ["Daycoval", "Santander"]
     }
     
+    # Pega a lista certa ou usa "Outros" se der erro
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
+
+    # === LÓGICA DE CATEGORIAS ===
+    lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro"]
+    if codigo_atual in ["TN", "TL"]:
+        lista_categorias.append("Auto (C6)")
 
     st.markdown(f"### Gestão: **{codigo_atual}**")
     
@@ -57,10 +71,15 @@ def desenhar_aba_codigo(codigo_atual):
             
             with col1:
                 banco = st.selectbox("Banco", options=opcoes_bancos, key=f"b_{codigo_atual}")
+                categoria = st.selectbox("Tipo de Recebimento", options=lista_categorias, key=f"cat_{codigo_atual}")
                 data_em = st.date_input("Data de Emissão", value=date.today(), key=f"d_{codigo_atual}")
-                num_nf = st.text_input("Número da NF", key=f"n_{codigo_atual}")
-            
+                
             with col2:
+                num_nf = st.text_input("Número da NF", key=f"n_{codigo_atual}")
+                
+                # Campo Referência (Mês/Ano)
+                data_ref_input = st.date_input("Mês de Referência", value=date.today(), key=f"ref_{codigo_atual}")
+                
                 st.write("**Status da Emissão**")
                 status_emitida = st.toggle("Marcar como Emitida", key=f"t_{codigo_atual}")
                 
@@ -77,12 +96,26 @@ def desenhar_aba_codigo(codigo_atual):
                 nova_nf = st.text_input("Nova NF (se cancelada)", key=f"nn_{codigo_atual}")
 
             if st.form_submit_button("💾 Salvar"):
+                erro_validacao = False
+                
                 if not num_nf:
                     st.warning("⚠️ Preencha o número da Nota.")
-                else:
+                    erro_validacao = True
+                
+                # Validação do C6 Auto
+                if categoria == "Auto (C6)" and "C6" not in banco:
+                    st.error("⛔ Erro: A categoria 'Auto' é exclusiva para o C6 Bank.")
+                    erro_validacao = True
+
+                if not erro_validacao:
+                    # Formata a data de referência (Ex: 01/2026)
+                    referencia_formatada = data_ref_input.strftime("%m/%Y")
+
                     dados = {
                         "codigo": codigo_atual,
                         "banco": banco,
+                        "categoria": categoria,
+                        "referencia": referencia_formatada,
                         "data_emissao": str(data_em),
                         "numero_nf": num_nf,
                         "emitida": status_emitida,
@@ -91,7 +124,7 @@ def desenhar_aba_codigo(codigo_atual):
                     }
                     try:
                         supabase.table("notas_fiscais").insert(dados).execute()
-                        st.success(f"✅ Salvo!")
+                        st.success(f"✅ Salvo! Ref: {referencia_formatada}")
                         time.sleep(1)
                         st.rerun()
                     except Exception as e:
@@ -102,10 +135,18 @@ def desenhar_aba_codigo(codigo_atual):
     # -------------------------------------------
     with st.expander("🗑️ Excluir Nota Errada"):
         try:
-            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
+            res_delete = (
+                supabase.table("notas_fiscais")
+                .select("*")
+                .eq("codigo", codigo_atual)
+                .order("id", desc=True)
+                .limit(30)
+                .execute()
+            )
             
             if res_delete.data:
-                opcoes_exclusao = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_delete.data}
+                # Mostra NF, Banco e Referência na lista
+                opcoes_exclusao = {f"NF {item['numero_nf']} ({item.get('referencia', '-')}) - {item['banco']}": item['id'] for item in res_delete.data}
                 
                 nota_selecionada = st.selectbox("Selecione para apagar:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
                 
@@ -126,9 +167,14 @@ def desenhar_aba_codigo(codigo_atual):
     st.write("---")
     st.subheader(f"📂 Histórico: {codigo_atual}")
     
-    # IMPORTANTE: O erro anterior estava aqui. O try precisa fechar com except.
     try:
-        response = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
+        response = (
+            supabase.table("notas_fiscais")
+            .select("*")
+            .eq("codigo", codigo_atual)
+            .order("data_emissao", desc=True)
+            .execute()
+        )
         df = pd.DataFrame(response.data)
 
         if not df.empty:
@@ -145,8 +191,10 @@ def desenhar_aba_codigo(codigo_atual):
             
             for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
                 with st.expander(f"{nome_mes} {ano} — ({len(dados_mes)} notas)"):
-                    cols_show = ['STATUS', 'banco', 'numero_nf', 'data_emissao', 'cancelada', 'nova_nf']
-                    st.dataframe(dados_mes[cols_show], hide_index=True, use_container_width=True)
+                    cols_show = ['STATUS', 'referencia', 'banco', 'categoria', 'numero_nf', 'data_emissao', 'cancelada', 'nova_nf']
+                    # Filtra colunas existentes
+                    cols_final = [c for c in cols_show if c in df.columns]
+                    st.dataframe(dados_mes[cols_final], hide_index=True, use_container_width=True)
         else:
             st.info(f"Nenhuma nota em {codigo_atual}.")
             
@@ -162,4 +210,3 @@ with tab2:
     desenhar_aba_codigo("TL")
 with tab3:
     desenhar_aba_codigo("JF")
-
