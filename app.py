@@ -5,14 +5,14 @@ import calendar
 from datetime import date, timedelta
 from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÃO VISUAL ---
+# --- 1. CONFIGURAÇÃO VISUAL (AGORA TELA CHEIA - WIDE) ---
 try:
-    st.set_page_config(page_title="Controle de Notas Fiscais", page_icon="logo.png", layout="centered")
+    st.set_page_config(page_title="Controle de Notas", page_icon="logo.png", layout="wide")
 except:
-    st.set_page_config(page_title="Controle de Notas Fiscais", page_icon="📝", layout="centered")
+    st.set_page_config(page_title="Controle de Notas", page_icon="📝", layout="wide")
 
 # --- CABEÇALHO ---
-col_logo, col_titulo = st.columns([1, 4])
+col_logo, col_titulo = st.columns([1, 8])
 with col_logo:
     try:
         st.image("logo.png", width=100)
@@ -20,6 +20,8 @@ with col_logo:
         st.caption("") 
 with col_titulo:
     st.title("Controle de Notas Fiscais")
+
+st.write("---")
 
 # --- 2. CONEXÃO SEGURA ---
 try:
@@ -31,11 +33,11 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# --- MOTOR DE COBRANÇA (A PARTIR DE 25/04/2026) ---
+# --- FUNÇÃO: MOTOR DE COBRANÇA (LADO DIREITO)
 # ==========================================
 def exibir_painel_alertas():
     DIAS_AVISO_PREVIO = 2 
-    DATA_INICIO_SISTEMA = date(2026, 4, 25) # <-- MARCO ZERO DA COBRANÇA
+    DATA_INICIO_SISTEMA = date(2026, 4, 25) 
 
     REGRAS = {
         "AgiBank": {"tipo": "dia_util", "dia": 1},
@@ -86,18 +88,13 @@ def exibir_painel_alertas():
                 if not df_b.empty:
                     ultima = pd.to_datetime(df_b['data_emissao'].max()).date()
 
-            # --- LÓGICA SEMANAL ---
             if regra["tipo"] == "semanal":
-                # Se não tem nota ou se a nota é muito antiga, a cobrança começa do "Marco Zero"
                 ultima_referencia = max(ultima, DATA_INICIO_SISTEMA) if ultima else DATA_INICIO_SISTEMA
                 dias_sem_nota = (hoje - ultima_referencia).days
-                
                 if dias_sem_nota > 7:
-                    atrasados.append(f"🚨 **{banco}**: Atrasado há {dias_sem_nota - 7} dias! (Regra: Semanal)")
+                    atrasados.append(f"🚨 **{banco}**: Atrasado há {dias_sem_nota - 7} dias!")
                 elif dias_sem_nota >= (7 - DIAS_AVISO_PREVIO):
-                    vencendo_em_breve.append(f"⚠️ **{banco}**: Prazo semanal vence em {7 - dias_sem_nota} dias.")
-
-            # --- LÓGICA MENSAL ---
+                    vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {7 - dias_sem_nota} dias.")
             else:
                 if regra["tipo"] == "dia_util":
                     idx = regra["dia"] - 1
@@ -108,43 +105,39 @@ def exibir_painel_alertas():
                 elif regra["tipo"] == "ultimo_dia":
                     data_limite = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
 
-                # ANISTIA: Se a data limite deste mês for ANTES de 25/04/2026, ignoramos e seguimos.
-                if data_limite < DATA_INICIO_SISTEMA:
-                    continue
+                if data_limite < DATA_INICIO_SISTEMA: continue
 
-                # Verifica se já emitiu DENTRO DESTE MÊS
                 ja_emitiu_mes_atual = (ultima is not None) and (ultima >= hoje.replace(day=1))
 
                 if not ja_emitiu_mes_atual:
                     if hoje > data_limite:
-                        atrasados.append(f"🚨 **{banco}**: ATRASADO! (Venceu dia {data_limite.strftime('%d/%m')})")
+                        atrasados.append(f"🚨 **{banco}**: ATRASADO! (Venceu {data_limite.strftime('%d/%m')})")
                     elif (data_limite - hoje).days <= DIAS_AVISO_PREVIO:
-                        vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {(data_limite - hoje).days} dias ({data_limite.strftime('%d/%m')})")
+                        vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {(data_limite - hoje).days} dias.")
 
-        # --- EXIBIÇÃO NO TOPO ---
+        # RENDERIZA O PAINEL DE ALERTAS
         if atrasados or vencendo_em_breve:
             st.toast("⚠️ Existem notas pendentes!", icon="🚨")
-            with st.container():
-                st.error("## 📢 CENTRAL DE COBRANÇA")
-                
-                if atrasados:
-                    st.markdown("#### 🚩 PENDENTES / ATRASADOS")
-                    for a in atrasados:
-                        st.write(a)
-                
-                if vencendo_em_breve:
-                    st.markdown("#### ⏳ VENCENDO EM BREVE")
-                    for v in vencendo_em_breve:
-                        st.info(v)
-                st.write("---")
+            st.markdown("### 📢 CENTRAL DE COBRANÇA")
+            
+            if atrasados:
+                st.error("**🚩 PENDENTES / ATRASADOS**")
+                for a in atrasados: st.write(a)
+            
+            if vencendo_em_breve:
+                st.warning("**⏳ VENCENDO EM BREVE**")
+                for v in vencendo_em_breve: st.write(v)
+        else:
+            st.success("✅ Tudo em dia! Nenhuma cobrança pendente.")
+            st.balloons() # Celebração visual se estiver tudo ok!
+
     except Exception as e:
-        pass
+        st.caption("Aguardando dados...")
 
-exibir_painel_alertas()
-
-# --- 3. FUNÇÃO MESTRA (ABAS E LANÇAMENTOS) ---
+# ==========================================
+# --- FUNÇÃO: GESTÃO DE NOTAS (LADO ESQUERDO)
+# ==========================================
 def desenhar_aba_codigo(codigo_atual):
-    # LISTAS DE BANCOS ATUALIZADAS
     listas_de_bancos = {
         "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Diga", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "TeddyHub"],
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Futuro Previdência", "GVN", "Happy", "iCred", "Itaú", "Lecca", "Nossa Fintech", "Pan", "Santander", "ZiliCred", "Safra"],
@@ -155,9 +148,8 @@ def desenhar_aba_codigo(codigo_atual):
     lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro"]
     if codigo_atual in ["TN", "TL"]: lista_categorias.append("Auto (C6)")
 
-    st.markdown(f"### Gestão: **{codigo_atual}**")
-    
-    with st.expander(f"➕ Nova Nota ({codigo_atual})", expanded=True):
+    # --- ÁREA DE LANÇAMENTO ---
+    with st.expander(f"➕ Lançar Nova Nota ({codigo_atual})", expanded=True):
         with st.form(f"form_{codigo_atual}", clear_on_submit=False):
             col1, col2 = st.columns(2)
             with col1:
@@ -169,7 +161,7 @@ def desenhar_aba_codigo(codigo_atual):
                 data_ref_input = st.date_input("Mês de Referência", value=date.today(), key=f"ref_{codigo_atual}")
                 status_emitida = st.toggle("Marcar como Emitida", key=f"t_{codigo_atual}")
             
-            if st.form_submit_button("💾 Salvar Lançamento"):
+            if st.form_submit_button("💾 Salvar Lançamento", use_container_width=True):
                 if not num_nf: st.warning("⚠️ Informe o número da NF.")
                 elif categoria == "Auto (C6)" and "C6" not in banco: st.error("⛔ Categoria Auto é só para C6.")
                 else:
@@ -185,20 +177,65 @@ def desenhar_aba_codigo(codigo_atual):
                         time.sleep(1); st.rerun()
                     except Exception as e: st.error(f"Erro: {e}")
 
-    # --- HISTÓRICO ---
+    # --- ÁREA DE EXCLUSÃO ---
+    with st.expander("🗑️ Excluir Nota Errada"):
+        try:
+            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
+            if res_delete.data:
+                opcoes_exclusao = {f"NF {item['numero_nf']} ({item.get('referencia', '-')}) - {item['banco']}": item['id'] for item in res_delete.data}
+                nota_selecionada = st.selectbox("Selecione:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
+                if st.button(f"Apagar Nota", type="primary", key=f"btn_del_{codigo_atual}"):
+                    supabase.table("notas_fiscais").delete().eq("id", opcoes_exclusao[nota_selecionada]).execute()
+                    st.toast("🗑️ Apagado!")
+                    time.sleep(1); st.rerun()
+        except: st.caption("Lista vazia.")
+
+    # --- HISTÓRICO ORGANIZADO POR MÊS ---
     st.write("---")
+    st.markdown(f"### 📂 Histórico de Lançamentos ({codigo_atual})")
     try:
         res = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
             df['data_emissao'] = pd.to_datetime(df['data_emissao'])
             df['STATUS'] = df['emitida'].apply(lambda x: "🟢 Emitida" if x else "🔴 Pendente")
-            df['Mes/Ano'] = df['data_emissao'].dt.strftime('%m/%Y')
-            st.dataframe(df[['STATUS', 'referencia', 'banco', 'categoria', 'numero_nf', 'data_emissao']], hide_index=True, use_container_width=True)
-    except: st.caption("Sem dados históricos.")
+            
+            # Traduz os meses para Português
+            mapa_meses = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
+                          7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
+            df['ano'] = df['data_emissao'].dt.year
+            df['mes_num'] = df['data_emissao'].dt.month
+            df['mes_nome'] = df['mes_num'].map(mapa_meses)
+            
+            # Agrupa os dados
+            grupos = df.groupby(['ano', 'mes_num', 'mes_nome'])
+            
+            for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
+                # Cria a "gaveta" (expander) com o Mês e Ano
+                with st.expander(f"📅 {nome_mes} {ano} — ({len(dados_mes)} notas registradas)"):
+                    cols_final = [c for c in ['STATUS', 'referencia', 'banco', 'categoria', 'numero_nf', 'data_emissao'] if c in df.columns]
+                    st.dataframe(dados_mes[cols_final], hide_index=True, use_container_width=True)
+        else:
+            st.info(f"Nenhuma nota encontrada no código {codigo_atual}.")
+    except Exception as e: 
+        st.error(f"Erro ao carregar histórico: {e}")
 
-# --- ABAS ---
-tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
-with tab1: desenhar_aba_codigo("TN")
-with tab2: desenhar_aba_codigo("TL")
-with tab3: desenhar_aba_codigo("JF")
+# ==========================================
+# --- ESTRUTURA DA PÁGINA (O "CADERNO ABERTO")
+# ==========================================
+
+# Divide a tela: Esquerda (70% do espaço) e Direita (30% do espaço)
+col_esquerda, col_direita = st.columns([7, 3], gap="large")
+
+# 1. LADO ESQUERDO (Abas e Formulários)
+with col_esquerda:
+    tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
+    with tab1: desenhar_aba_codigo("TN")
+    with tab2: desenhar_aba_codigo("TL")
+    with tab3: desenhar_aba_codigo("JF")
+
+# 2. LADO DIREITO (Painel de Cobranças)
+with col_direita:
+    # Cria uma caixa visual para isolar a área de alertas
+    with st.container(border=True):
+        exibir_painel_alertas()
