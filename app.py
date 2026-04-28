@@ -5,7 +5,7 @@ import calendar
 from datetime import date, timedelta
 from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÃO VISUAL (AGORA TELA CHEIA - WIDE) ---
+# --- 1. CONFIGURAÇÃO VISUAL (TELA CHEIA) ---
 try:
     st.set_page_config(page_title="Controle de Notas", page_icon="logo.png", layout="wide")
 except:
@@ -33,9 +33,18 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# --- FUNÇÃO: MOTOR DE COBRANÇA (LADO DIREITO)
+# --- DICIONÁRIO GLOBAL DE BANCOS ---
 # ==========================================
-def exibir_painel_alertas():
+LISTAS_DE_BANCOS = {
+    "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Diga", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "TeddyHub"],
+    "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Futuro Previdência", "GVN", "Happy", "iCred", "Itaú", "Lecca", "Nossa Fintech", "Pan", "Santander", "ZiliCred", "Safra"],
+    "JF": ["Daycoval", "Santander"]
+}
+
+# ==========================================
+# --- FUNÇÃO: MOTOR DE COBRANÇA (POR CÓDIGO)
+# ==========================================
+def exibir_painel_alertas(codigo_atual):
     DIAS_AVISO_PREVIO = 2 
     DATA_INICIO_SISTEMA = date(2026, 4, 25) 
 
@@ -71,7 +80,8 @@ def exibir_painel_alertas():
     }
 
     try:
-        res = supabase.table("notas_fiscais").select("banco, data_emissao, emitida").eq("emitida", True).execute()
+        # A MÁGICA AQUI: Filtra o banco de dados APENAS para o código atual
+        res = supabase.table("notas_fiscais").select("banco, data_emissao, emitida").eq("codigo", codigo_atual).eq("emitida", True).execute()
         df_emitidas = pd.DataFrame(res.data)
         
         hoje = date.today()
@@ -81,8 +91,16 @@ def exibir_painel_alertas():
         atrasados = []
         vencendo_em_breve = []
 
-        for banco, regra in REGRAS.items():
+        # Pega a lista de bancos que existem neste código
+        bancos_deste_codigo = LISTAS_DE_BANCOS.get(codigo_atual, [])
+
+        for banco in bancos_deste_codigo:
+            if banco not in REGRAS:
+                continue # Se não tem regra para esse banco, ignora
+                
+            regra = REGRAS[banco]
             ultima = None
+            
             if not df_emitidas.empty:
                 df_b = df_emitidas[df_emitidas['banco'] == banco]
                 if not df_b.empty:
@@ -116,10 +134,9 @@ def exibir_painel_alertas():
                         vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {(data_limite - hoje).days} dias.")
 
         # RENDERIZA O PAINEL DE ALERTAS
+        st.markdown(f"### 📢 Cobranças: **{codigo_atual}**")
+        
         if atrasados or vencendo_em_breve:
-            st.toast("⚠️ Existem notas pendentes!", icon="🚨")
-            st.markdown("### 📢 CENTRAL DE COBRANÇA")
-            
             if atrasados:
                 st.error("**🚩 PENDENTES / ATRASADOS**")
                 for a in atrasados: st.write(a)
@@ -128,8 +145,7 @@ def exibir_painel_alertas():
                 st.warning("**⏳ VENCENDO EM BREVE**")
                 for v in vencendo_em_breve: st.write(v)
         else:
-            st.success("✅ Tudo em dia! Nenhuma cobrança pendente.")
-            st.balloons() # Celebração visual se estiver tudo ok!
+            st.success("✅ Tudo em dia! Nenhuma cobrança pendente para este código.")
 
     except Exception as e:
         st.caption("Aguardando dados...")
@@ -138,18 +154,14 @@ def exibir_painel_alertas():
 # --- FUNÇÃO: GESTÃO DE NOTAS (LADO ESQUERDO)
 # ==========================================
 def desenhar_aba_codigo(codigo_atual):
-    listas_de_bancos = {
-        "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Diga", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "TeddyHub"],
-        "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Futuro Previdência", "GVN", "Happy", "iCred", "Itaú", "Lecca", "Nossa Fintech", "Pan", "Santander", "ZiliCred", "Safra"],
-        "JF": ["Daycoval", "Santander"]
-    }
-    
-    opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
+    opcoes_bancos = LISTAS_DE_BANCOS.get(codigo_atual, ["Outros"])
     lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro"]
     if codigo_atual in ["TN", "TL"]: lista_categorias.append("Auto (C6)")
 
+    st.markdown(f"### Lançamentos: **{codigo_atual}**")
+    
     # --- ÁREA DE LANÇAMENTO ---
-    with st.expander(f"➕ Lançar Nova Nota ({codigo_atual})", expanded=True):
+    with st.expander(f"➕ Nova Nota", expanded=True):
         with st.form(f"form_{codigo_atual}", clear_on_submit=False):
             col1, col2 = st.columns(2)
             with col1:
@@ -192,7 +204,7 @@ def desenhar_aba_codigo(codigo_atual):
 
     # --- HISTÓRICO ORGANIZADO POR MÊS ---
     st.write("---")
-    st.markdown(f"### 📂 Histórico de Lançamentos ({codigo_atual})")
+    st.markdown(f"### 📂 Histórico de Lançamentos")
     try:
         res = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
         df = pd.DataFrame(res.data)
@@ -200,18 +212,15 @@ def desenhar_aba_codigo(codigo_atual):
             df['data_emissao'] = pd.to_datetime(df['data_emissao'])
             df['STATUS'] = df['emitida'].apply(lambda x: "🟢 Emitida" if x else "🔴 Pendente")
             
-            # Traduz os meses para Português
             mapa_meses = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
                           7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
             df['ano'] = df['data_emissao'].dt.year
             df['mes_num'] = df['data_emissao'].dt.month
             df['mes_nome'] = df['mes_num'].map(mapa_meses)
             
-            # Agrupa os dados
             grupos = df.groupby(['ano', 'mes_num', 'mes_nome'])
             
             for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
-                # Cria a "gaveta" (expander) com o Mês e Ano
                 with st.expander(f"📅 {nome_mes} {ano} — ({len(dados_mes)} notas registradas)"):
                     cols_final = [c for c in ['STATUS', 'referencia', 'banco', 'categoria', 'numero_nf', 'data_emissao'] if c in df.columns]
                     st.dataframe(dados_mes[cols_final], hide_index=True, use_container_width=True)
@@ -221,21 +230,26 @@ def desenhar_aba_codigo(codigo_atual):
         st.error(f"Erro ao carregar histórico: {e}")
 
 # ==========================================
-# --- ESTRUTURA DA PÁGINA (O "CADERNO ABERTO")
+# --- ESTRUTURA DA PÁGINA (CADERNO ABERTO POR ABA)
 # ==========================================
+# Aqui criamos as abas PRIMEIRO
+tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
 
-# Divide a tela: Esquerda (70% do espaço) e Direita (30% do espaço)
-col_esquerda, col_direita = st.columns([7, 3], gap="large")
+# Função que desenha a tela dividida DENTRO da aba
+def construir_tela_dividida(codigo):
+    col_esquerda, col_direita = st.columns([7, 3], gap="large")
+    
+    with col_esquerda:
+        desenhar_aba_codigo(codigo)
+        
+    with col_direita:
+        with st.container(border=True):
+            exibir_painel_alertas(codigo)
 
-# 1. LADO ESQUERDO (Abas e Formulários)
-with col_esquerda:
-    tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
-    with tab1: desenhar_aba_codigo("TN")
-    with tab2: desenhar_aba_codigo("TL")
-    with tab3: desenhar_aba_codigo("JF")
-
-# 2. LADO DIREITO (Painel de Cobranças)
-with col_direita:
-    # Cria uma caixa visual para isolar a área de alertas
-    with st.container(border=True):
-        exibir_painel_alertas()
+# Agora injetamos a tela dividida dentro de cada aba
+with tab1:
+    construir_tela_dividida("TN")
+with tab2:
+    construir_tela_dividida("TL")
+with tab3:
+    construir_tela_dividida("JF")
