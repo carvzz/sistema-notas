@@ -31,10 +31,11 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# --- MOTOR DE COBRANÇA (A PARTIR DE HOJE) ---
+# --- MOTOR DE COBRANÇA (A PARTIR DE 25/04/2026) ---
 # ==========================================
 def exibir_painel_alertas():
     DIAS_AVISO_PREVIO = 2 
+    DATA_INICIO_SISTEMA = date(2026, 4, 25) # <-- MARCO ZERO DA COBRANÇA
 
     REGRAS = {
         "AgiBank": {"tipo": "dia_util", "dia": 1},
@@ -79,24 +80,22 @@ def exibir_painel_alertas():
         vencendo_em_breve = []
 
         for banco, regra in REGRAS.items():
-            nunca_emitido = True
-            
+            ultima = None
             if not df_emitidas.empty:
                 df_b = df_emitidas[df_emitidas['banco'] == banco]
                 if not df_b.empty:
                     ultima = pd.to_datetime(df_b['data_emissao'].max()).date()
-                    nunca_emitido = False
 
             # --- LÓGICA SEMANAL ---
             if regra["tipo"] == "semanal":
-                if nunca_emitido:
-                    atrasados.append(f"🚨 **{banco}**: Emissão semanal pendente!")
-                else:
-                    dias_sem_nota = (hoje - ultima).days
-                    if dias_sem_nota > 7:
-                        atrasados.append(f"🚨 **{banco}**: Atrasado há {dias_sem_nota - 7} dias! (Regra: Semanal)")
-                    elif dias_sem_nota >= (7 - DIAS_AVISO_PREVIO):
-                        vencendo_em_breve.append(f"⚠️ **{banco}**: Prazo semanal vence em {7 - dias_sem_nota} dias.")
+                # Se não tem nota ou se a nota é muito antiga, a cobrança começa do "Marco Zero"
+                ultima_referencia = max(ultima, DATA_INICIO_SISTEMA) if ultima else DATA_INICIO_SISTEMA
+                dias_sem_nota = (hoje - ultima_referencia).days
+                
+                if dias_sem_nota > 7:
+                    atrasados.append(f"🚨 **{banco}**: Atrasado há {dias_sem_nota - 7} dias! (Regra: Semanal)")
+                elif dias_sem_nota >= (7 - DIAS_AVISO_PREVIO):
+                    vencendo_em_breve.append(f"⚠️ **{banco}**: Prazo semanal vence em {7 - dias_sem_nota} dias.")
 
             # --- LÓGICA MENSAL ---
             else:
@@ -109,8 +108,12 @@ def exibir_painel_alertas():
                 elif regra["tipo"] == "ultimo_dia":
                     data_limite = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
 
+                # ANISTIA: Se a data limite deste mês for ANTES de 25/04/2026, ignoramos e seguimos.
+                if data_limite < DATA_INICIO_SISTEMA:
+                    continue
+
                 # Verifica se já emitiu DENTRO DESTE MÊS
-                ja_emitiu_mes_atual = (not nunca_emitido) and (ultima >= hoje.replace(day=1))
+                ja_emitiu_mes_atual = (ultima is not None) and (ultima >= hoje.replace(day=1))
 
                 if not ja_emitiu_mes_atual:
                     if hoje > data_limite:
@@ -141,11 +144,13 @@ exibir_painel_alertas()
 
 # --- 3. FUNÇÃO MESTRA (ABAS E LANÇAMENTOS) ---
 def desenhar_aba_codigo(codigo_atual):
+    # LISTAS DE BANCOS ATUALIZADAS
     listas_de_bancos = {
         "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Diga", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "TeddyHub"],
         "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Futuro Previdência", "GVN", "Happy", "iCred", "Itaú", "Lecca", "Nossa Fintech", "Pan", "Santander", "ZiliCred", "Safra"],
         "JF": ["Daycoval", "Santander"]
     }
+    
     opcoes_bancos = listas_de_bancos.get(codigo_atual, ["Outros"])
     lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro"]
     if codigo_atual in ["TN", "TL"]: lista_categorias.append("Auto (C6)")
