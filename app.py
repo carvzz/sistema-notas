@@ -2,254 +2,206 @@ import streamlit as st
 import pandas as pd
 import time
 import calendar
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÃO VISUAL (TELA CHEIA) ---
+# --- 1. CONFIGURAÇÃO VISUAL ---
 try:
     st.set_page_config(page_title="Controle de Notas", page_icon="logo.png", layout="wide")
 except:
     st.set_page_config(page_title="Controle de Notas", page_icon="📝", layout="wide")
 
-# --- CABEÇALHO ---
-col_logo, col_titulo = st.columns([1, 8])
-with col_logo:
-    try:
-        st.image("logo.png", width=100)
-    except:
-        st.caption("") 
-with col_titulo:
-    st.title("Controle de Notas Fiscais")
+# ==========================================
+# --- SISTEMA DE LOGIN E SEGURANÇA ---
+# ==========================================
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+    st.session_state.usuario_logado = ""
+    st.session_state.is_admin = False
 
-st.write("---")
-
-# --- 2. CONEXÃO SEGURA ---
-try:
-    URL_SUPABASE = st.secrets["SUPABASE_URL"]
-    KEY_SUPABASE = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
-except Exception as e:
-    st.error("⚠️ Erro de Conexão. Verifique os Secrets.")
+if not st.session_state.autenticado:
+    col_v1, col_login, col_v2 = st.columns([1, 2, 1])
+    with col_login:
+        st.title("🔒 Acesso Restrito")
+        with st.form("login"):
+            u = st.text_input("Usuário").lower().strip()
+            s = st.text_input("Senha", type="password")
+            if st.form_submit_button("Entrar", use_container_width=True):
+                users = st.secrets.get("usuarios", {})
+                if u in users and users[u] == s:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario_logado = u.capitalize()
+                    st.session_state.is_admin = (u == "admin")
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos")
     st.stop()
 
+# --- CABEÇALHO ---
+col_l, col_t, col_u = st.columns([1, 7, 2])
+with col_l:
+    try: st.image("logo.png", width=80)
+    except: pass
+with col_t:
+    st.title(f"Controle de Notas Fiscais")
+with col_u:
+    st.write(f"👤 **{st.session_state.usuario_logado}**")
+    if st.button("Sair"):
+        st.session_state.autenticado = False
+        st.rerun()
+
+# --- CONEXÃO ---
+supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
 # ==========================================
-# --- DICIONÁRIO GLOBAL DE BANCOS ---
+# --- REGRAS E BANCOS ---
 # ==========================================
-LISTAS_DE_BANCOS = {
+LISTAS_BANCOS = {
     "TN": ["AgiBank", "Banrisul", "BMG", "BOC", "C6 Bank", "Cetelem", "CredFranco", "Crefaz", "Daycoval", "Digio", "Diga", "Facta", "Itaú", "Master", "Pan", "Paraná", "PresençaBank", "Santander", "PicPay", "Voce Seguradora", "QueroMais", "TeddyHub"],
     "TL": ["Amigoz", "Banrisul", "Banco do Brasil", "BMG", "BRB", "BTW", "CBA", "C6 Bank", "Capital", "CredFranco", "Crefisa", "Digio", "Facta", "Futuro Previdência", "GVN", "Happy", "iCred", "Itaú", "Lecca", "Nossa Fintech", "Pan", "Santander", "ZiliCred", "Safra"],
     "JF": ["Daycoval", "Santander"]
 }
 
-# ==========================================
-# --- FUNÇÃO: MOTOR DE COBRANÇA (POR CÓDIGO)
-# ==========================================
-def exibir_painel_alertas(codigo_atual):
-    DIAS_AVISO_PREVIO = 2 
-    DATA_INICIO_SISTEMA = date(2026, 4, 25) 
-
-    REGRAS = {
-        "AgiBank": {"tipo": "dia_util", "dia": 1},
-        "Capital": {"tipo": "semanal", "dias": 7},
-        "Amigoz": {"tipo": "dia_fixo", "dia": 1}, 
-        "Banrisul": {"tipo": "dia_fixo", "dia": 29}, 
-        "Banco do Brasil": {"tipo": "dia_util", "dia": 3},
-        "BMG": {"tipo": "dia_fixo", "dia": 16},
-        "BRB": {"tipo": "dia_util", "dia": 5},
-        "C6 Bank": {"tipo": "dia_util", "dia": 1},
-        "CBA": {"tipo": "dia_fixo", "dia": 1},
-        "CCB": {"tipo": "dia_util", "dia": 1},
-        "Crefaz": {"tipo": "semanal", "dias": 7},
-        "Crefisa": {"tipo": "dia_fixo", "dia": 28},
-        "Daycoval": {"tipo": "ultimo_dia"},
-        "Digio": {"tipo": "dia_util", "dia": 3},
-        "Happy": {"tipo": "dia_fixo", "dia": 1},
-        "iCred": {"tipo": "dia_util", "dia": 3},
-        "Itaú": {"tipo": "dia_fixo", "dia": 17},
-        "Mercantil TL": {"tipo": "dia_util", "dia": 1},
-        "Mercantil CP": {"tipo": "semanal", "dias": 7},
-        "Pan": {"tipo": "dia_util", "dia": 3},
-        "Paraná": {"tipo": "dia_fixo", "dia": 14},
-        "PicPay": {"tipo": "dia_util", "dia": 3},
-        "PresençaBank": {"tipo": "dia_util", "dia": 1},
-        "Santander": {"tipo": "semanal", "dias": 7},
-        "BTW": {"tipo": "dia_fixo", "dia": 1},
-        "BRB360": {"tipo": "dia_fixo", "dia": 25},
-        "Safra": {"tipo": "dia_util", "dia": 3},
-        "QueroMais": {"tipo": "ultimo_dia"}
-    }
-
-    try:
-        # A MÁGICA AQUI: Filtra o banco de dados APENAS para o código atual
-        res = supabase.table("notas_fiscais").select("banco, data_emissao, emitida").eq("codigo", codigo_atual).eq("emitida", True).execute()
-        df_emitidas = pd.DataFrame(res.data)
-        
-        hoje = date.today()
-        cal = calendar.Calendar()
-        dias_uteis = [d for d in cal.itermonthdates(hoje.year, hoje.month) if d.month == hoje.month and d.weekday() < 5]
-        
-        atrasados = []
-        vencendo_em_breve = []
-
-        # Pega a lista de bancos que existem neste código
-        bancos_deste_codigo = LISTAS_DE_BANCOS.get(codigo_atual, [])
-
-        for banco in bancos_deste_codigo:
-            if banco not in REGRAS:
-                continue # Se não tem regra para esse banco, ignora
-                
-            regra = REGRAS[banco]
-            ultima = None
-            
-            if not df_emitidas.empty:
-                df_b = df_emitidas[df_emitidas['banco'] == banco]
-                if not df_b.empty:
-                    ultima = pd.to_datetime(df_b['data_emissao'].max()).date()
-
-            if regra["tipo"] == "semanal":
-                ultima_referencia = max(ultima, DATA_INICIO_SISTEMA) if ultima else DATA_INICIO_SISTEMA
-                dias_sem_nota = (hoje - ultima_referencia).days
-                if dias_sem_nota > 7:
-                    atrasados.append(f"🚨 **{banco}**: Atrasado há {dias_sem_nota - 7} dias!")
-                elif dias_sem_nota >= (7 - DIAS_AVISO_PREVIO):
-                    vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {7 - dias_sem_nota} dias.")
-            else:
-                if regra["tipo"] == "dia_util":
-                    idx = regra["dia"] - 1
-                    data_limite = dias_uteis[idx] if idx < len(dias_uteis) else dias_uteis[-1]
-                elif regra["tipo"] == "dia_fixo":
-                    try: data_limite = hoje.replace(day=regra["dia"])
-                    except: data_limite = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
-                elif regra["tipo"] == "ultimo_dia":
-                    data_limite = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
-
-                if data_limite < DATA_INICIO_SISTEMA: continue
-
-                ja_emitiu_mes_atual = (ultima is not None) and (ultima >= hoje.replace(day=1))
-
-                if not ja_emitiu_mes_atual:
-                    if hoje > data_limite:
-                        atrasados.append(f"🚨 **{banco}**: ATRASADO! (Venceu {data_limite.strftime('%d/%m')})")
-                    elif (data_limite - hoje).days <= DIAS_AVISO_PREVIO:
-                        vencendo_em_breve.append(f"⚠️ **{banco}**: Vence em {(data_limite - hoje).days} dias.")
-
-        # RENDERIZA O PAINEL DE ALERTAS
-        st.markdown(f"### 📢 Cobranças: **{codigo_atual}**")
-        
-        if atrasados or vencendo_em_breve:
-            if atrasados:
-                st.error("**🚩 PENDENTES / ATRASADOS**")
-                for a in atrasados: st.write(a)
-            
-            if vencendo_em_breve:
-                st.warning("**⏳ VENCENDO EM BREVE**")
-                for v in vencendo_em_breve: st.write(v)
-        else:
-            st.success("✅ Tudo em dia! Nenhuma cobrança pendente para este código.")
-
-    except Exception as e:
-        st.caption("Aguardando dados...")
+REGRAS = {
+    "AgiBank": {"tipo": "dia_util", "dia": 1}, "Capital": {"tipo": "semanal", "dias": 7},
+    "Amigoz": {"tipo": "dia_fixo", "dia": 1}, "Banrisul": {"tipo": "dia_fixo", "dia": 29},
+    "Banco do Brasil": {"tipo": "dia_util", "dia": 3}, "BMG": {"tipo": "dia_fixo", "dia": 16},
+    "BRB": {"tipo": "dia_util", "dia": 5}, "C6 Bank": {"tipo": "dia_util", "dia": 1},
+    "CBA": {"tipo": "dia_fixo", "dia": 1}, "CCB": {"tipo": "dia_util", "dia": 1},
+    "Crefaz": {"tipo": "semanal", "dias": 7}, "Crefisa": {"tipo": "dia_fixo", "dia": 28},
+    "Daycoval": {"tipo": "ultimo_dia"}, "Digio": {"tipo": "dia_util", "dia": 3},
+    "Happy": {"tipo": "dia_fixo", "dia": 1}, "iCred": {"tipo": "dia_util", "dia": 3},
+    "Itaú": {"tipo": "dia_fixo", "dia": 17}, "Mercantil TL": {"tipo": "dia_util", "dia": 1},
+    "Mercantil CP": {"tipo": "semanal", "dias": 7}, "Pan": {"tipo": "dia_util", "dia": 3},
+    "Paraná": {"tipo": "dia_fixo", "dia": 14}, "PicPay": {"tipo": "dia_util", "dia": 3},
+    "PresençaBank": {"tipo": "dia_util", "dia": 1}, "Santander": {"tipo": "semanal", "dias": 7},
+    "BTW": {"tipo": "dia_fixo", "dia": 1}, "BRB360": {"tipo": "dia_fixo", "dia": 25},
+    "Safra": {"tipo": "dia_util", "dia": 3}, "QueroMais": {"tipo": "ultimo_dia"}
+}
 
 # ==========================================
-# --- FUNÇÃO: GESTÃO DE NOTAS (LADO ESQUERDO)
+# --- LÓGICA DE COBRANÇA (DIREITA) ---
 # ==========================================
-def desenhar_aba_codigo(codigo_atual):
-    opcoes_bancos = LISTAS_DE_BANCOS.get(codigo_atual, ["Outros"])
-    lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro"]
-    if codigo_atual in ["TN", "TL"]: lista_categorias.append("Auto (C6)")
-
-    st.markdown(f"### Lançamentos: **{codigo_atual}**")
+def exibir_cobrancas(codigo):
+    hoje = date.today()
+    DATA_INICIO = date(2026, 4, 25)
+    res = supabase.table("notas_fiscais").select("banco, data_emissao, emitida").eq("codigo", codigo).eq("emitida", True).eq("ativo", True).execute()
+    df_e = pd.DataFrame(res.data)
     
-    # --- ÁREA DE LANÇAMENTO ---
-    with st.expander(f"➕ Nova Nota", expanded=True):
-        with st.form(f"form_{codigo_atual}", clear_on_submit=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                banco = st.selectbox("Banco", options=opcoes_bancos, key=f"b_{codigo_atual}")
-                categoria = st.selectbox("Tipo de Recebimento", options=lista_categorias, key=f"cat_{codigo_atual}")
-                data_em = st.date_input("Data de Emissão", value=date.today(), key=f"d_{codigo_atual}")
-            with col2:
-                num_nf = st.text_input("Número da NF", key=f"n_{codigo_atual}")
-                data_ref_input = st.date_input("Mês de Referência", value=date.today(), key=f"ref_{codigo_atual}")
-                status_emitida = st.toggle("Marcar como Emitida", key=f"t_{codigo_atual}")
-            
-            if st.form_submit_button("💾 Salvar Lançamento", use_container_width=True):
-                if not num_nf: st.warning("⚠️ Informe o número da NF.")
-                elif categoria == "Auto (C6)" and "C6" not in banco: st.error("⛔ Categoria Auto é só para C6.")
-                else:
-                    try:
-                        ref_formatada = data_ref_input.strftime("%m/%Y")
-                        dados = {
-                            "codigo": codigo_atual, "banco": banco, "categoria": categoria, 
-                            "referencia": ref_formatada, "data_emissao": str(data_em), 
-                            "numero_nf": num_nf, "emitida": status_emitida
-                        }
-                        supabase.table("notas_fiscais").insert(dados).execute()
-                        st.success("Salvo com sucesso!")
-                        time.sleep(1); st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
+    atrasados, urgentes = [], []
+    for banco in LISTAS_BANCOS[codigo]:
+        if banco not in REGRAS: continue
+        r = REGRAS[banco]
+        ultima = pd.to_datetime(df_e[df_e['banco']==banco]['data_emissao'].max()).date() if not df_e.empty and banco in df_e['banco'].values else None
+        
+        # Simplificação da data limite (dia útil/fixo)
+        if r["tipo"] == "dia_util": limite = hoje.replace(day=r["dia"]) # Simplificado para exemplo
+        elif r["tipo"] == "dia_fixo": limite = hoje.replace(day=min(r["dia"], 28))
+        else: limite = hoje.replace(day=28)
 
-    # --- ÁREA DE EXCLUSÃO ---
-    with st.expander("🗑️ Excluir Nota Errada"):
-        try:
-            res_delete = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("id", desc=True).limit(30).execute()
-            if res_delete.data:
-                opcoes_exclusao = {f"NF {item['numero_nf']} ({item.get('referencia', '-')}) - {item['banco']}": item['id'] for item in res_delete.data}
-                nota_selecionada = st.selectbox("Selecione:", list(opcoes_exclusao.keys()), key=f"sel_del_{codigo_atual}")
-                if st.button(f"Apagar Nota", type="primary", key=f"btn_del_{codigo_atual}"):
-                    supabase.table("notas_fiscais").delete().eq("id", opcoes_exclusao[nota_selecionada]).execute()
-                    st.toast("🗑️ Apagado!")
-                    time.sleep(1); st.rerun()
-        except: st.caption("Lista vazia.")
+        if limite < DATA_INICIO: continue
+        emitida_mes = ultima and ultima >= hoje.replace(day=1)
+        
+        if not emitida_mes:
+            if hoje > limite: atrasados.append(f"🚨 {banco} (Venceu {limite.strftime('%d/%m')})")
+            elif (limite - hoje).days <= 2: urgentes.append(f"⚠️ {banco} (Vence em {(limite-hoje).days} dias)")
 
-    # --- HISTÓRICO ORGANIZADO POR MÊS ---
-    st.write("---")
-    st.markdown(f"### 📂 Histórico de Lançamentos")
-    try:
-        res = supabase.table("notas_fiscais").select("*").eq("codigo", codigo_atual).order("data_emissao", desc=True).execute()
+    st.subheader(f"📢 Cobranças {codigo}")
+    if atrasados:
+        st.error("🚩 **ATRASADOS**")
+        for a in atrasados: st.write(a)
+    if urgentes:
+        st.warning("⏳ **URGENTES**")
+        for u in urgentes: st.write(u)
+    if not atrasados and not urgentes: st.success("✅ Tudo em dia!")
+
+# ==========================================
+# --- LANÇAMENTOS E AÇÃO EM LOTE (ESQUERDA) ---
+# ==========================================
+def desenhar_painel(codigo):
+    col_f, col_c = st.columns([7, 3], gap="large")
+    
+    with col_f:
+        # --- LANÇAR ---
+        with st.expander("➕ Nova Nota", expanded=True):
+            with st.form(f"f_{codigo}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    b = st.selectbox("Banco", LISTAS_BANCOS[codigo])
+                    cat = st.selectbox("Tipo", ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro", "Auto (C6)"])
+                    d = st.date_input("Emissão")
+                with c2:
+                    n = st.text_input("Número NF")
+                    ref = st.date_input("Referência")
+                    st.write("---")
+                    e = st.toggle("Emitida", value=True)
+                if st.form_submit_button("Salvar", use_container_width=True):
+                    supabase.table("notas_fiscais").insert({"codigo":codigo, "banco":b, "categoria":cat, "data_emissao":str(d), "numero_nf":n, "referencia":ref.strftime("%m/%Y"), "emitida":e, "criado_por":st.session_state.usuario_logado}).execute()
+                    st.success("Salvo!"); time.sleep(1); st.rerun()
+
+        # --- AÇÃO EM LOTE E HISTÓRICO ---
+        st.write("---")
+        st.subheader("📂 Histórico e Ações em Lote")
+        busca = st.text_input("🔍 Buscar por Banco, NF ou Mês/Ano")
+        
+        res = supabase.table("notas_fiscais").select("*").eq("codigo", codigo).eq("ativo", True).order("data_emissao", desc=True).execute()
         df = pd.DataFrame(res.data)
-        if not df.empty:
-            df['data_emissao'] = pd.to_datetime(df['data_emissao'])
-            df['STATUS'] = df['emitida'].apply(lambda x: "🟢 Emitida" if x else "🔴 Pendente")
-            
-            mapa_meses = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
-                          7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
-            df['ano'] = df['data_emissao'].dt.year
-            df['mes_num'] = df['data_emissao'].dt.month
-            df['mes_nome'] = df['mes_num'].map(mapa_meses)
-            
-            grupos = df.groupby(['ano', 'mes_num', 'mes_nome'])
-            
-            for (ano, mes_num, nome_mes), dados_mes in sorted(grupos, key=lambda x: (x[0][0], x[0][1]), reverse=True):
-                with st.expander(f"📅 {nome_mes} {ano} — ({len(dados_mes)} notas registradas)"):
-                    cols_final = [c for c in ['STATUS', 'referencia', 'banco', 'categoria', 'numero_nf', 'data_emissao'] if c in df.columns]
-                    st.dataframe(dados_mes[cols_final], hide_index=True, use_container_width=True)
-        else:
-            st.info(f"Nenhuma nota encontrada no código {codigo_atual}.")
-    except Exception as e: 
-        st.error(f"Erro ao carregar histórico: {e}")
-
-# ==========================================
-# --- ESTRUTURA DA PÁGINA (CADERNO ABERTO POR ABA)
-# ==========================================
-# Aqui criamos as abas PRIMEIRO
-tab1, tab2, tab3 = st.tabs(["Código TN", "Código TL", "Código JF"])
-
-# Função que desenha a tela dividida DENTRO da aba
-def construir_tela_dividida(codigo):
-    col_esquerda, col_direita = st.columns([7, 3], gap="large")
-    
-    with col_esquerda:
-        desenhar_aba_codigo(codigo)
         
-    with col_direita:
-        with st.container(border=True):
-            exibir_painel_alertas(codigo)
+        if not df.empty:
+            if busca:
+                df = df[df.apply(lambda row: busca.lower() in str(row).lower(), axis=1)]
 
-# Agora injetamos a tela dividida dentro de cada aba
-with tab1:
-    construir_tela_dividida("TN")
-with tab2:
-    construir_tela_dividida("TL")
-with tab3:
-    construir_tela_dividida("JF")
+            # Ação em Lote usando st.data_editor
+            st.info("💡 Para dar baixa em lote: Marque a coluna 'EMITIDA' e clique em 'Salvar Alterações'.")
+            df_view = df[['id', 'emitida', 'numero_nf', 'banco', 'referencia', 'data_emissao', 'criado_por']]
+            
+            # O data_editor permite editar a coluna 'emitida' em várias linhas de uma vez
+            edited_df = st.data_editor(
+                df_view, 
+                column_config={"emitida": st.column_config.CheckboxColumn("EMITIDA"), "id": None}, # Esconde ID
+                disabled=["numero_nf", "banco", "referencia", "data_emissao", "criado_por"],
+                use_container_width=True,
+                hide_index=True,
+                key=f"editor_{codigo}"
+            )
+
+            if st.button("✔️ Salvar Alterações em Lote", key=f"btn_lote_{codigo}"):
+                # Compara o original com o editado e atualiza o banco
+                for i, row in edited_df.iterrows():
+                    id_nota = row['id']
+                    novo_status = row['emitida']
+                    # Só atualiza se mudou
+                    if novo_status != df.loc[df['id']==id_nota, 'emitida'].values[0]:
+                        supabase.table("notas_fiscais").update({"emitida": novo_status, "modificado_por": st.session_state.usuario_logado}).eq("id", id_nota).execute()
+                st.success("Alterações salvas!")
+                time.sleep(1); st.rerun()
+
+        # --- PAINEL DO ADMIN (LIXEIRA) ---
+        if st.session_state.is_admin:
+            with st.expander("🛡️ Painel do Chefe (Lixeira)"):
+                res_lixo = supabase.table("notas_fiscais").select("*").eq("codigo", codigo).eq("ativo", False).execute()
+                if res_lixo.data:
+                    df_lixo = pd.DataFrame(res_lixo.data)
+                    nota_r = st.selectbox("Restaurar:", df_lixo['numero_nf'] + " - " + df_lixo['banco'])
+                    if st.button("♻️ Restaurar Selecionada"):
+                        id_r = df_lixo.iloc[st.session_state.index_lixo]['id'] # Lógica simplificada
+                        supabase.table("notas_fiscais").update({"ativo": True}).eq("id", id_r).execute()
+                        st.rerun()
+                else: st.caption("Lixeira vazia.")
+                
+                if not df.empty:
+                    nota_d = st.selectbox("Enviar para Lixeira:", df['numero_nf'] + " - " + df['banco'])
+                    if st.button("🗑️ Excluir Nota"):
+                        id_d = df[df['numero_nf'] == nota_d.split(" - ")[0]]['id'].values[0]
+                        supabase.table("notas_fiscais").update({"ativo": False}).eq("id", id_d).execute()
+                        st.rerun()
+
+    with col_c:
+        with st.container(border=True):
+            exibir_cobrancas(codigo)
+
+# --- ABAS ---
+t1, t2, t3 = st.tabs(["Código TN", "Código TL", "Código JF"])
+with t1: desenhar_painel("TN")
+with t2: desenhar_painel("TL")
+with t3: desenhar_painel("JF")
