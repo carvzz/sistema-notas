@@ -136,13 +136,13 @@ def exibir_cobrancas(codigo):
         st.caption("Aguardando dados...")
 
 # ==========================================
-# --- LANÇAMENTOS E AÇÃO EM LOTE (ESQUERDA) ---
+# --- LANÇAMENTOS, EDIÇÃO E AÇÃO EM LOTE ---
 # ==========================================
 def desenhar_painel(codigo):
     col_f, col_c = st.columns([7, 3], gap="large")
     
     with col_f:
-        # --- LANÇAR ---
+        # --- 1. LANÇAR NOVA NOTA ---
         with st.expander("➕ Nova Nota", expanded=True):
             with st.form(f"f_lancamento_{codigo}", clear_on_submit=False):
                 c1, c2 = st.columns(2)
@@ -161,7 +161,60 @@ def desenhar_painel(codigo):
                         supabase.table("notas_fiscais").insert({"codigo":codigo, "banco":b, "categoria":cat, "data_emissao":str(d), "numero_nf":n, "referencia":ref.strftime("%m/%Y"), "emitida":e, "criado_por":st.session_state.usuario_logado}).execute()
                         st.success("Salvo!"); time.sleep(1); st.rerun()
 
-        # --- AÇÃO EM LOTE E HISTÓRICO ---
+        # --- 2. ÁREA DE EDIÇÃO (CORRIGIR DADOS) ---
+        with st.expander("✏️ Editar Detalhes da Nota Existente"):
+            try:
+                res_edit = supabase.table("notas_fiscais").select("*").eq("codigo", codigo).eq("ativo", True).order("id", desc=True).limit(50).execute()
+                if res_edit.data:
+                    dados_map = {item['id']: item for item in res_edit.data}
+                    opcoes_display = {f"NF {item['numero_nf']} ({item.get('referencia', '-')}) - {item['banco']}": item['id'] for item in res_edit.data}
+                    
+                    nota_selecionada = st.selectbox("Selecione a nota que deseja corrigir:", ["Selecione..."] + list(opcoes_display.keys()), key=f"sel_edit_{codigo}")
+                    
+                    if nota_selecionada != "Selecione...":
+                        id_real = opcoes_display[nota_selecionada]
+                        nota_atual = dados_map[id_real]
+                        
+                        st.info("Altere os dados abaixo e clique em 'Atualizar'.")
+                        with st.form(f"form_edit_real_{codigo}"):
+                            c_edit1, c_edit2 = st.columns(2)
+                            
+                            opcoes_bancos = LISTAS_BANCOS.get(codigo, ["Outros"])
+                            idx_banco = opcoes_bancos.index(nota_atual['banco']) if nota_atual['banco'] in opcoes_bancos else 0
+                            
+                            lista_categorias = ["Comissão a Vista", "Pro-Rata", "Campanha", "Seguro", "Auto (C6)"]
+                            idx_cat = lista_categorias.index(nota_atual.get('categoria', 'Comissão a Vista')) if nota_atual.get('categoria') in lista_categorias else 0
+                            
+                            try: data_db = datetime.strptime(nota_atual['data_emissao'], "%Y-%m-%d").date()
+                            except: data_db = date.today()
+
+                            with c_edit1:
+                                novo_banco = st.selectbox("Banco", options=opcoes_bancos, index=idx_banco)
+                                nova_cat = st.selectbox("Tipo", options=lista_categorias, index=idx_cat)
+                                nova_data = st.date_input("Data de Emissão", value=data_db)
+                            
+                            with c_edit2:
+                                novo_num = st.text_input("Número da NF", value=nota_atual['numero_nf'])
+                                nova_ref = st.text_input("Mês/Ano Referência", value=nota_atual.get('referencia', ''))
+                                novo_status = st.toggle("Emitida", value=nota_atual['emitida'])
+                                
+                            if st.form_submit_button("🔄 Atualizar Lançamento", type="primary", use_container_width=True):
+                                dados_atualizados = {
+                                    "banco": novo_banco, "categoria": nova_cat, 
+                                    "referencia": nova_ref, "data_emissao": str(nova_data), 
+                                    "numero_nf": novo_num, "emitida": novo_status,
+                                    "modificado_por": st.session_state.usuario_logado
+                                }
+                                supabase.table("notas_fiscais").update(dados_atualizados).eq("id", id_real).execute()
+                                st.success("Nota atualizada com sucesso!")
+                                time.sleep(1)
+                                st.rerun()
+                else:
+                    st.caption("Nenhuma nota recente para editar.")
+            except Exception as e:
+                st.caption(f"Erro ao carregar edição: {e}")
+
+        # --- 3. AÇÃO EM LOTE E HISTÓRICO ---
         st.write("---")
         st.subheader("📂 Histórico e Ações em Lote")
         busca = st.text_input("🔍 Buscar por Banco, NF ou Mês/Ano (Aperte Enter para filtrar)", key=f"busca_{codigo}")
@@ -200,40 +253,39 @@ def desenhar_painel(codigo):
         except Exception as e:
             st.error("Erro ao carregar o histórico.")
 
-        # --- PAINEL DE EXCLUSÃO (SÓ ADMIN) ---
-        if st.session_state.is_admin:
-            with st.expander("🗑️ Lixeira (Ocultar ou Restaurar Notas)"):
-                col_lixo1, col_lixo2 = st.columns(2)
-                
-                with col_lixo1:
-                    st.markdown("**Enviar para a Lixeira**")
-                    try:
-                        res_ativas = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo).eq("ativo", True).order("id", desc=True).limit(100).execute()
-                        if res_ativas.data:
-                            opcoes_del = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_ativas.data}
-                            nota_apagar = st.selectbox("Selecione a nota:", list(opcoes_del.keys()), key=f"sel_del_{codigo}")
-                            if st.button("🚨 Apagar (Ocultar)", type="primary", use_container_width=True, key=f"btn_del_confirma_{codigo}"):
-                                id_para_apagar = opcoes_del[nota_apagar]
-                                supabase.table("notas_fiscais").update({"ativo": False, "modificado_por": st.session_state.usuario_logado}).eq("id", id_para_apagar).execute()
-                                st.toast("Enviada para lixeira!")
-                                time.sleep(1); st.rerun()
-                        else: st.caption("Não há notas para apagar.")
-                    except: pass
-                
-                with col_lixo2:
-                    st.markdown("**Restaurar da Lixeira**")
-                    try:
-                        res_lixo = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo).eq("ativo", False).order("id", desc=True).execute()
-                        if res_lixo.data:
-                            opcoes_res = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_lixo.data}
-                            nota_restaurar = st.selectbox("Selecione a nota:", list(opcoes_res.keys()), key=f"sel_res_{codigo}")
-                            if st.button("♻️ Restaurar Nota", type="secondary", use_container_width=True, key=f"btn_res_confirma_{codigo}"):
-                                id_para_restaurar = opcoes_res[nota_restaurar]
-                                supabase.table("notas_fiscais").update({"ativo": True, "modificado_por": st.session_state.usuario_logado}).eq("id", id_para_restaurar).execute()
-                                st.toast("Restaurada!")
-                                time.sleep(1); st.rerun()
-                        else: st.caption("A lixeira está vazia.")
-                    except: pass
+        # --- 4. PAINEL DE EXCLUSÃO (LIXEIRA LIBERADA PARA TODOS) ---
+        with st.expander("🗑️ Lixeira (Ocultar ou Restaurar Notas)"):
+            col_lixo1, col_lixo2 = st.columns(2)
+            
+            with col_lixo1:
+                st.markdown("**Enviar para a Lixeira**")
+                try:
+                    res_ativas = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo).eq("ativo", True).order("id", desc=True).limit(100).execute()
+                    if res_ativas.data:
+                        opcoes_del = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_ativas.data}
+                        nota_apagar = st.selectbox("Selecione a nota:", list(opcoes_del.keys()), key=f"sel_del_{codigo}")
+                        if st.button("🚨 Apagar (Ocultar)", type="primary", use_container_width=True, key=f"btn_del_confirma_{codigo}"):
+                            id_para_apagar = opcoes_del[nota_apagar]
+                            supabase.table("notas_fiscais").update({"ativo": False, "modificado_por": st.session_state.usuario_logado}).eq("id", id_para_apagar).execute()
+                            st.toast("Enviada para lixeira!")
+                            time.sleep(1); st.rerun()
+                    else: st.caption("Não há notas para apagar.")
+                except: pass
+            
+            with col_lixo2:
+                st.markdown("**Restaurar da Lixeira**")
+                try:
+                    res_lixo = supabase.table("notas_fiscais").select("id, numero_nf, banco, data_emissao").eq("codigo", codigo).eq("ativo", False).order("id", desc=True).execute()
+                    if res_lixo.data:
+                        opcoes_res = {f"NF {item['numero_nf']} - {item['banco']} ({item['data_emissao']})": item['id'] for item in res_lixo.data}
+                        nota_restaurar = st.selectbox("Selecione a nota:", list(opcoes_res.keys()), key=f"sel_res_{codigo}")
+                        if st.button("♻️ Restaurar Nota", type="secondary", use_container_width=True, key=f"btn_res_confirma_{codigo}"):
+                            id_para_restaurar = opcoes_res[nota_restaurar]
+                            supabase.table("notas_fiscais").update({"ativo": True, "modificado_por": st.session_state.usuario_logado}).eq("id", id_para_restaurar).execute()
+                            st.toast("Restaurada!")
+                            time.sleep(1); st.rerun()
+                    else: st.caption("A lixeira está vazia.")
+                except: pass
 
     with col_c:
         with st.container(border=True):
