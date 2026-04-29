@@ -48,7 +48,7 @@ if not st.session_state.autenticado:
                 if u in users and users[u] == s:
                     st.session_state.autenticado = True
                     st.session_state.usuario_logado = u.capitalize()
-                    st.session_state.is_admin = (u == "admin")
+                    st.session_state.is_admin = (u in ["admin", "modesto", "josimar", "janisson"])
                     st.rerun()
                 else:
                     st.error("Usuário ou senha incorretos")
