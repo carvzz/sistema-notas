@@ -20,14 +20,26 @@ if "autenticado" not in st.session_state:
     st.session_state.is_admin = False
 
 if not st.session_state.autenticado:
+    # Usamos colunas para espremer o formulário no meio da tela
     col_v1, col_login, col_v2 = st.columns([1, 2, 1])
+    
     with col_login:
         st.write("")
         st.write("")
-        try: st.image("logo.png", width=150)
-        except: pass
-        st.title("🔒 Login do Sistema")
         
+        # TRUQUE PARA CENTRALIZAR A LOGO: Colunas invisíveis
+        col_img1, col_img2, col_img3 = st.columns([1, 1, 1])
+        with col_img2:
+            try: 
+                # use_container_width faz ela se adaptar perfeitamente ao meio
+                st.image("logo.png", use_container_width=True)
+            except: 
+                pass
+                
+        # TRUQUE PARA CENTRALIZAR O TÍTULO: Um pouquinho de HTML
+        st.markdown("<h1 style='text-align: center; margin-bottom: 20px;'>🔒 Login do Sistema</h1>", unsafe_allow_html=True)
+        
+        # O Formulário em si
         with st.form("login"):
             u = st.text_input("Usuário").lower().strip()
             s = st.text_input("Senha", type="password")
@@ -161,7 +173,7 @@ def desenhar_painel(codigo):
                         supabase.table("notas_fiscais").insert({"codigo":codigo, "banco":b, "categoria":cat, "data_emissao":str(d), "numero_nf":n, "referencia":ref.strftime("%m/%Y"), "emitida":e, "criado_por":st.session_state.usuario_logado}).execute()
                         st.success("Salvo!"); time.sleep(1); st.rerun()
 
-        # --- 2. ÁREA DE EDIÇÃO (CORRIGIR DADOS) ---
+        # --- 2. ÁREA DE EDIÇÃO ---
         with st.expander("✏️ Editar Detalhes da Nota Existente"):
             try:
                 res_edit = supabase.table("notas_fiscais").select("*").eq("codigo", codigo).eq("ativo", True).order("id", desc=True).limit(50).execute()
@@ -253,7 +265,7 @@ def desenhar_painel(codigo):
         except Exception as e:
             st.error("Erro ao carregar o histórico.")
 
-        # --- 4. PAINEL DE EXCLUSÃO (LIXEIRA LIBERADA PARA TODOS) ---
+        # --- 4. PAINEL DE EXCLUSÃO (LIXEIRA) ---
         with st.expander("🗑️ Lixeira (Ocultar ou Restaurar Notas)"):
             col_lixo1, col_lixo2 = st.columns(2)
             
